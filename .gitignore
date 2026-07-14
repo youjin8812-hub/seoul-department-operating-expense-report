@@ -1,0 +1,32 @@
+# 원본 데이터 (개인정보 가능 데이터, 실제 CSV는 배포하지 않음)
+input/*.csv
+!input/.gitkeep
+
+# 중간 산출물 (재현 가능 — scripts/generate_charts.py 등 재실행으로 재생성)
+workspace/*
+!workspace/.gitkeep
+
+# 최종 산출물 (재현 가능 — scripts/run_pipeline.py 재실행으로 재생성)
+output/*
+!output/.gitkeep
+
+# 구버전 보관 (참고용 로컬 백업, 공개 저장소 제외)
+archive/
+
+# 참고용 원본 하네스 파일 (공개 저장소에는 이 프로젝트의 구현물만 포함)
+.claude/
+
+# 한컴오피스/MS Office 임시파일
+~$*
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# 로그
+*.log
