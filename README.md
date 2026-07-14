@@ -223,30 +223,7 @@ seoul-department-operating-expense-report/
 
 ## 아키텍처
 
-CSV 집계 → 인터랙티브 대시보드/DOCX 생성 → HWPX 변환 → 검증으로 이어지는 단계별 파이프라인 구조입니다. 각 단계는 독립된 스크립트로 구현되어 있고, 모든 수치는 코드 실행 결과만 인용합니다.
-
-```mermaid
-flowchart LR
-    A[input/seoul_expenses.csv] --> B[generate_charts.py]
-    B --> C[output/charts/*.png]
-    B --> D[workspace/analysis_enhanced.json]
-    D --> E[generate_dashboard.py]
-    D --> F[generate_docx_report.py]
-    C --> F
-    E --> G[output/dashboard.html]
-    F --> H[output/*.docx]
-    H --> I[convert_docx_to_hwpx.py]
-    I --> J[output/*.hwpx]
-    G --> K[validate_data_and_privacy.py]
-    H --> K
-    H --> L[validate_docx_layout.py]
-    J --> M[validate_hwpx_output.py]
-    K --> N[검증 보고서]
-    L --> N
-    M --> N
-```
-
-더 상세한 구조(단계별 스크립트 역할 표, 디렉터리 구조)는 [docs/architecture.md](docs/architecture.md)를, 실행 순서와 흐름은 [docs/workflow.md](docs/workflow.md)(시퀀스 다이어그램 포함)를 참조하세요.
+파이프라인 흐름은 위 "[입력 → 처리 → 검증 → 출력](#입력--처리--검증--출력)" 다이어그램을 참조하세요. 스크립트 파일 단위의 더 상세한 구조(단계별 스크립트 역할 표, 디렉터리 구조)는 [docs/architecture.md](docs/architecture.md)를, 실행 순서와 흐름은 [docs/workflow.md](docs/workflow.md)(시퀀스 다이어그램 포함)를 참조하세요.
 
 > 이 프로젝트는 Harness-100의 **82 Report Generator Harness** 구조를 참고하여,
 > 서울시 본청 부서운영업무추진비 분석·보고서 자동화 목적에 맞게
