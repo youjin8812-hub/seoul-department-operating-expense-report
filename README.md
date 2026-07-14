@@ -21,6 +21,73 @@
 
 모든 분석 수치는 원본 CSV에서 직접 재계산해 교차검증하며, 원본 데이터에 없는 금액·원인·의도는 추정하지 않습니다. 자세한 원칙은 [docs/analysis_rules.md](docs/analysis_rules.md)를 참조하세요.
 
+## 하네스 구성
+
+이 프로젝트는 CSV를 읽어 보고서를 뽑아내는 단일 스크립트가 아니라, **역할이 분리된 에이전트가 정해진 순서로 산출물을 주고받고, 각 단계의 결과를 검증하는 하네스(harness)** 구조로 설계되어 있습니다.
+
+- **수치 계산**: 모든 집계·통계는 Python(pandas)이 결정론적으로 계산합니다. 어떤 단계에서도 LLM이 수치를 추정하거나 생성하지 않습니다.
+- **하네스가 통제하는 것**: 역할 분리(수집·분석·시각화·집필·변환·검증), 실행 순서, 단계 간 산출물 전달(`workspace/analysis_enhanced.json`을 단일 소스로 공유), 실패 시 처리(예: HWPX 변환 실패해도 HTML·DOCX는 그대로 유지), 각 단계 산출물의 자동 검증.
+- **과장하지 않는 부분**: 현재 구현은 에이전트 간 실시간 LLM 대화나 모델 티어(소형/대형 모델 라우팅 등)를 사용하지 않습니다. 각 "에이전트"는 명확한 책임을 가진 결정론적 Python 스크립트이며, 오케스트레이터(`run_pipeline.py`)가 순서·조건부 실행·검증 호출을 관장합니다.
+
+### 에이전트 역할
+
+| 역할 | 구현 파일 | 책임 |
+|---|---|---|
+| Data Collector·Analyst | `scripts/generate_charts.py` | CSV 정제, 월·부서·비목별 분석 |
+| Visualizer | `scripts/generate_charts.py`, `scripts/generate_dashboard.py` | PNG 차트, HTML 대시보드 |
+| Report Writer | `scripts/generate_docx_report.py` | DOCX 보고서 |
+| Format Converter | `scripts/convert_docx_to_hwpx.py` | HWPX 변환 |
+| Validator | `scripts/validate_*.py` | 수치·개인정보·레이아웃·HWPX 검증 |
+| Orchestrator | `scripts/run_pipeline.py` | 전체 실행과 오류 처리 |
+
+### 핸드오프(Handoff)
+
+| 송신 역할 | 수신 역할 | Payload | Trigger |
+|---|---|---|---|
+| Data Collector | Analyst | 정제 데이터 | 입력 검증 통과 |
+| Analyst | Visualizer | 분석 JSON·집계표 | 분석 완료 |
+| Analyst·Visualizer | Report Writer | 지표·차트 | 차트 생성 완료 |
+| Report Writer | Format Converter | DOCX | DOCX 생성 완료 |
+| 각 생성 단계 | Validator | HTML·DOCX·HWPX | 산출물 생성 완료 |
+| Validator | Orchestrator | 오류 위치·검증 결과 | 검증 완료 |
+
+### 검증 루프
+
+- **수치 오류**: 분석 또는 보고서 단계 재실행
+- **개인정보 노출**: HTML·보고서 생성 단계 재실행
+- **DOCX 레이아웃 오류**: DOCX만 재생성
+- **HWPX 실패**: HTML·DOCX는 유지하고 HWPX만 재실행
+- 검증 통과 후 최종 산출물 확정
+
+### 입력 → 처리 → 검증 → 출력
+
+```mermaid
+flowchart LR
+    A[업무추진비 CSV] --> B[Data Collector]
+    B --> C[Analyst]
+    C --> D[Visualizer]
+    C --> E[Report Writer]
+    D --> F[HTML Dashboard]
+    D --> E
+    E --> G[DOCX Report]
+    G --> H[HWPX Converter]
+    F --> I[Validator]
+    G --> I
+    H --> I
+    I --> J{검증 통과}
+    J -->|Yes| K[최종 산출물]
+    J -->|No| L[실패 단계 재실행]
+```
+
+## 과제 요구사항 대응
+
+| 요구사항 | 이 프로젝트의 대응 | 근거 |
+|---|---|---|
+| AI Agent 업무처리 구조 | 역할별 에이전트(Data Collector/Analyst/Visualizer/Report Writer/Format Converter/Validator)와 오케스트레이터로 파이프라인 구성 | "하네스 구성", "에이전트 역할" |
+| 입력 → 처리 → 검증 → 출력 | CSV 입력 → 분석/시각화/집필 처리 → Validator 검증 → 최종 산출물 출력의 4단계 흐름 | "입력 → 처리 → 검증 → 출력" 다이어그램 |
+| Payload·Trigger·Handoff | 단계 간 전달 데이터(Payload)와 실행 조건(Trigger)을 명시 | "핸드오프(Handoff)" 표 |
+| 바이브 코딩 활용 | Claude Code와의 대화형 반복 개발로 설계·통합·검증·GitHub 배포까지 단계별 승인을 거쳐 진행 | 본 저장소 전체(커밋 이력) |
+
 ## 실행 화면
 
 ### 인터랙티브 HTML 대시보드
@@ -156,7 +223,30 @@ seoul-department-operating-expense-report/
 
 ## 아키텍처
 
-CSV 집계 → 인터랙티브 대시보드/DOCX 생성 → HWPX 변환 → 검증으로 이어지는 단계별 파이프라인 구조입니다. 각 단계는 독립된 스크립트로 구현되어 있고, 모든 수치는 코드 실행 결과만 인용합니다. 상세 구조와 Mermaid 다이어그램은 [docs/architecture.md](docs/architecture.md)를 참조하세요.
+CSV 집계 → 인터랙티브 대시보드/DOCX 생성 → HWPX 변환 → 검증으로 이어지는 단계별 파이프라인 구조입니다. 각 단계는 독립된 스크립트로 구현되어 있고, 모든 수치는 코드 실행 결과만 인용합니다.
+
+```mermaid
+flowchart LR
+    A[input/seoul_expenses.csv] --> B[generate_charts.py]
+    B --> C[output/charts/*.png]
+    B --> D[workspace/analysis_enhanced.json]
+    D --> E[generate_dashboard.py]
+    D --> F[generate_docx_report.py]
+    C --> F
+    E --> G[output/dashboard.html]
+    F --> H[output/*.docx]
+    H --> I[convert_docx_to_hwpx.py]
+    I --> J[output/*.hwpx]
+    G --> K[validate_data_and_privacy.py]
+    H --> K
+    H --> L[validate_docx_layout.py]
+    J --> M[validate_hwpx_output.py]
+    K --> N[검증 보고서]
+    L --> N
+    M --> N
+```
+
+더 상세한 구조(단계별 스크립트 역할 표, 디렉터리 구조)는 [docs/architecture.md](docs/architecture.md)를, 실행 순서와 흐름은 [docs/workflow.md](docs/workflow.md)(시퀀스 다이어그램 포함)를 참조하세요.
 
 > 이 프로젝트는 Harness-100의 **82 Report Generator Harness** 구조를 참고하여,
 > 서울시 본청 부서운영업무추진비 분석·보고서 자동화 목적에 맞게
